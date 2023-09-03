@@ -1,0 +1,6 @@
+[submodule "sac_rnd"]
+	path = sac_rnd
+	url = https://github.com/tinkoff-ai/sac-rnd.git
+[submodule "bridge_data_v2"]
+	path = bridge_data_v2
+	url = https://github.com/4ku/bridge_data_v2.git
