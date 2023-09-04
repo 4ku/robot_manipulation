@@ -1,3 +1,4 @@
+import gc
 import tensorflow as tf
 import numpy as np
 import jax
@@ -169,11 +170,11 @@ def main(_):
     example_batch = shard_batch(example_batch, sharding)
 
     # create agent
-    agent = create_actor_agent(example_batch)
+    actor_agent = create_actor_agent(example_batch)
 
     # replicate agent across devices
     # need the jnp.array to avoid a bug where device_put doesn't recognize primitives
-    agent = jax.device_put(jax.tree_map(jnp.array, agent), sharding.replicate())
+    actor_agent = jax.device_put(jax.tree_map(jnp.array, actor_agent), sharding.replicate())
 
     sac_rnd_config = SAC_RND_Config()
 
@@ -209,7 +210,6 @@ def main(_):
         tx=optax.adam(learning_rate=sac_rnd_config.rnd_learning_rate),
         rms=RunningMeanStd.create(),
     )
-    actor = agent.state
 
     alpha_module = Alpha()
     alpha = TrainState.create(
@@ -285,7 +285,7 @@ def main(_):
     # shared carry for update loops
     update_carry = {
         "key": key,
-        "actor": actor,
+        "actor": actor_agent,
         "rnd": rnd,
         "critic": critic,
         "alpha": alpha,
@@ -340,13 +340,20 @@ def main(_):
                 # If you reach here, you have a valid batch; process it
                 rng = jax.random.PRNGKey(FLAGS.config.seed)
                 rng, val_rng = jax.random.split(rng)
-                metrics.append(agent.get_debug_metrics(batch, seed=val_rng))
+                metrics.append(update_carry["actor"].get_debug_metrics(batch, seed=val_rng))
 
             if len(metrics) > 0:
                 metrics = jax.tree_map(lambda *xs: np.mean(xs), *metrics)
                 logging.info(f"Validation metrics: {metrics}")
-                wandb_logger.log({"validation": metrics}, step=i)
+                wandb_logger.log({"validation": metrics}, step=epoch)
 
+            del val_iterator
+            
+            # Explicitly clear JAX memory
+            jax.device_get(jax.random.normal(jax.random.PRNGKey(0), (1,)))
+
+            # Explicitly run Python's garbage collector
+            gc.collect()
 
 if __name__ == "__main__":
     app.run(main)

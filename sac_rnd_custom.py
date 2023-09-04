@@ -4,20 +4,13 @@ import optax
 
 from flax.core import FrozenDict
 from typing import Dict, Tuple, Any
-from tqdm.auto import trange
 
 from flax.training.train_state import TrainState
-from jaxrl_m.common.common import JaxRLTrainState
+from jaxrl_m.agents.continuous.gc_bc import GCBCAgent
+
 from sac_rnd.offline_sac.utils.common import Metrics
 
 from sac_rnd.offline_sac.utils.running_moments import RunningMeanStd
-
-# import os
-# import sys
-# current_path = os.path.dirname(os.path.abspath(__file__))
-# sac_rnd_path = os.path.join(current_path, "sac_rnd")
-# sys.path.append(sac_rnd_path)
-
 
 class RNDTrainState(TrainState):
     rms: RunningMeanStd
@@ -79,7 +72,7 @@ def update_rnd(
 
 def update_actor(
     key: jax.random.PRNGKey,
-    actor: JaxRLTrainState,
+    actor: GCBCAgent,
     rnd: RNDTrainState,
     critic: TrainState,
     alpha: TrainState,
@@ -89,8 +82,9 @@ def update_actor(
 ) -> Tuple[jax.random.PRNGKey, TrainState, jax.Array, Metrics]:
     key, actions_key, random_action_key = jax.random.split(key, 3)
 
-    def actor_loss_fn(params):
-        actions_dist = actor.apply_fn(
+    def actor_loss_fn(params, rng):
+        rng, key = jax.random.split(rng)
+        actions_dist = actor.state.apply_fn(
             {"params": params},
             (batch["observations"], batch["goals"]),
             temperature=1.0,
@@ -128,12 +122,16 @@ def update_actor(
         )
         return loss, (actor_entropy, new_metrics)
 
-    grads, (actor_entropy, new_metrics) = jax.grad(actor_loss_fn, has_aux=True)(
-        actor.params
+    # compute gradients and update params
+    new_actor_state, (actor_entropy, new_metrics) = actor.state.apply_loss_fns(
+        actor_loss_fn, has_aux=True
     )
-    new_actor = actor.apply_gradients(grads=grads)
 
-    return key, new_actor, actor_entropy, new_metrics
+    # log learning rates
+    actor.lr_schedule(actor.state.step)
+    actor.replace(state=new_actor_state)
+
+    return key, actor, actor_entropy, new_metrics
 
 
 def update_alpha(
@@ -154,7 +152,7 @@ def update_alpha(
 
 def update_critic(
     key: jax.random.PRNGKey,
-    actor: TrainState,
+    actor: GCBCAgent,
     rnd: RNDTrainState,
     critic: CriticTrainState,
     alpha: TrainState,
@@ -166,8 +164,8 @@ def update_critic(
 ) -> Tuple[jax.random.PRNGKey, TrainState, Metrics]:
     key, actions_key = jax.random.split(key)
 
-    next_actions_dist = actor.apply_fn(
-        {"params": actor.params},
+    next_actions_dist = actor.state.apply_fn(
+        {"params": actor.state.params},
         (batch["next_observations"], batch["next_goals"]),
         temperature=1.0,
         train=False,
@@ -221,7 +219,7 @@ def update_critic(
 def update_sac(
     key: jax.random.PRNGKey,
     rnd: RNDTrainState,
-    actor: TrainState,
+    actor: GCBCAgent,
     critic: CriticTrainState,
     alpha: TrainState,
     batch: Dict[str, Any],

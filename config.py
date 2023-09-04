@@ -27,9 +27,9 @@ class SAC_RND_Config:
     rnd_mlp_type: str = "concat_first"
     rnd_target_mlp_type: Optional[str] = None
     rnd_switch_features: bool = True
-    rnd_update_epochs: int = 40
+    rnd_update_epochs: int = 50
     # training params
-    num_epochs: int = 20
+    num_epochs: int = 50
     num_updates_on_epoch: int = 100
     normalize_reward: bool = False
     # general params
