@@ -87,8 +87,8 @@ def get_config(config_string):
                     shared_goal_encoder=True,
                     use_proprio=False,
                     learning_rate=3e-4,
-                    warmup_steps=2000,
-                    decay_steps=int(2e6),
+                    warmup_steps=100,
+                    decay_steps=10_000,
                 ),
                 dataset_kwargs=dict(
                     goal_relabeling_strategy="uniform",

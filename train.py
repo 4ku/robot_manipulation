@@ -345,7 +345,7 @@ def main(_):
             if len(metrics) > 0:
                 metrics = jax.tree_map(lambda *xs: np.mean(xs), *metrics)
                 logging.info(f"Validation metrics: {metrics}")
-                wandb_logger.log({"validation": metrics}, step=epoch)
+                wandb_logger.log({"epoch": epoch, **{f"validation/{k}": v for k, v in metrics.items()}})
 
             del val_iterator
             

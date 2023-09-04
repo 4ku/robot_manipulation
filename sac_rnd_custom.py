@@ -109,6 +109,8 @@ def update_actor(
         random_actions = jax.random.uniform(
             random_action_key, shape=batch["actions"].shape, minval=-1.0, maxval=1.0
         )
+
+        mse = ((actions - batch["actions"]) ** 2).sum(-1)
         new_metrics = metrics.update(
             {
                 "batch_entropy": actor_entropy,
@@ -117,7 +119,7 @@ def update_actor(
                 "rnd_random": rnd_bonus(
                     rnd, get_flat_obs(batch["observations"]), random_actions
                 ).mean(),
-                "action_mse": ((actions - batch["actions"]) ** 2).mean(),
+                "action_mse": mse.mean(),
             }
         )
         return loss, (actor_entropy, new_metrics)
@@ -129,9 +131,8 @@ def update_actor(
 
     # log learning rates
     actor.lr_schedule(actor.state.step)
-    actor.replace(state=new_actor_state)
-
-    return key, actor, actor_entropy, new_metrics
+    new_actor = actor.replace(state=new_actor_state)
+    return key, new_actor, actor_entropy, new_metrics
 
 
 def update_alpha(
